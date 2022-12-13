@@ -3,6 +3,7 @@ import { Construct } from "constructs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as eks from "aws-cdk-lib/aws-eks";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
+import { KubectlV24Layer } from "@aws-cdk/lambda-layer-kubectl-v24";
 
 export class NnKubeStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -18,13 +19,14 @@ export class NnKubeStack extends cdk.Stack {
       version: eks.KubernetesVersion.V1_24,
       defaultCapacity: 0,
       mastersRole: clusterAdmin,
+      kubectlLayer: new KubectlV24Layer(this, "kubectl"),
     });
 
     cluster.awsAuth.addUserMapping(kubeAdmin, { groups: ["system:masters"] });
 
     cluster.addNodegroupCapacity("nn-kube-node-group", {
       instanceTypes: [
-        ec2.InstanceType.of(ec2.InstanceClass.T2, ec2.InstanceSize.MICRO),
+        ec2.InstanceType.of(ec2.InstanceClass.T2, ec2.InstanceSize.MEDIUM),
       ],
       desiredSize: 2,
       diskSize: 20,
@@ -51,6 +53,12 @@ export class NnKubeStack extends cdk.Stack {
                   "291526921916.dkr.ecr.us-west-1.amazonaws.com/noticeninja-auth:latest",
                 ports: [{ containerPort: 3001 }],
               },
+              {
+                name: "notice-ninja-workflows",
+                image:
+                  "291526921916.dkr.ecr.us-west-1.amazonaws.com/notice-ninja-workflows:latest",
+                ports: [{ containerPort: 3008 }],
+              },
             ],
           },
         },
@@ -63,7 +71,8 @@ export class NnKubeStack extends cdk.Stack {
       metadata: { name: "nn-kube" },
       spec: {
         type: "LoadBalancer",
-        ports: [{ port: 80, targetPort: 3001 }],
+        // ports: [{ port: 80, targetPort: 3001 }],
+        ports: [{ port: 80, targetPort: 3008 }],
         selector: appLabel,
       },
     };
