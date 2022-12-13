@@ -4,6 +4,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as eks from "aws-cdk-lib/aws-eks";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import { KubectlV24Layer } from "@aws-cdk/lambda-layer-kubectl-v24";
+import * as elasticcache from "aws-cdk-lib/aws-elasticache";
 
 export class NnKubeStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -78,5 +79,39 @@ export class NnKubeStack extends cdk.Stack {
     };
 
     cluster.addManifest("nn-kube", service, deployment);
+
+    const redisSubnetGroup = new elasticcache.CfnSubnetGroup(
+      this,
+      "redis-subnet-group",
+      {
+        subnetIds: cluster.vpc.privateSubnets.map((ps) => ps.subnetId),
+        description: "Subnet groups for redis cluster",
+      }
+    );
+
+    const redisSecurityGroup = new ec2.SecurityGroup(
+      this,
+      "redis-security-group",
+      {
+        vpc: cluster.vpc,
+        allowAllOutbound: true,
+      }
+    );
+
+    redisSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(6379));
+
+    const redisCache = new elasticcache.CfnCacheCluster(this, "nn-kube-redis", {
+      engine: "redis",
+      cacheNodeType: "cache.t3.micro",
+      numCacheNodes: 1,
+      vpcSecurityGroupIds: [redisSecurityGroup.securityGroupId],
+      cacheSubnetGroupName: redisSubnetGroup.ref,
+    });
+
+    redisCache.addDependsOn(redisSubnetGroup);
+
+    new cdk.CfnOutput(this, `CacheEndpointUrl`, {
+      value: redisCache.attrRedisEndpointAddress,
+    });
   }
 }
